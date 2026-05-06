@@ -113,6 +113,7 @@ export interface WLEDConfig {
   matrixHeight: number;
   name: string;
   ip: string;
+  stripType?: string;  // LED strip type ID, see ledStrips.ts (default 'WS2812B')
 }
 
 export interface WLEDPreset {

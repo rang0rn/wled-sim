@@ -105,4 +105,5 @@ export const DEFAULT_CONFIG: WLEDConfig = {
   matrixHeight: 8,
   name: 'WLED Simulator',
   ip: 'wled.sim',
+  stripType: 'WS2812B',
 };

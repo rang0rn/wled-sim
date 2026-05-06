@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Settings, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useWledStore } from '../store/wledStore';
 import { makeDefaultSegment } from '../wled/defaults';
+import { LED_STRIP_TYPES, LED_STRIP_CATEGORIES, getStripType } from '../wled/ledStrips';
 
 export function StripConfig() {
   const { config, updateConfig, applyConfigToState, state, setState } = useWledStore();
@@ -66,6 +67,47 @@ export function StripConfig() {
               onChange={e => setLocalCount(e.target.value)}
               className="input-field"
             />
+          </div>
+
+          {/* Strip Type */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] text-slate-500">Strip Type</label>
+            <select
+              value={config.stripType ?? 'WS2812B'}
+              onChange={e => updateConfig({ stripType: e.target.value })}
+              className="input-field text-[11px]"
+            >
+              {LED_STRIP_CATEGORIES.map(cat => {
+                const strips = LED_STRIP_TYPES.filter(s => s.category === cat);
+                if (strips.length === 0) return null;
+                return (
+                  <optgroup key={cat} label={cat}>
+                    {strips.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+            {(() => {
+              const strip = getStripType(config.stripType);
+              if (!strip) return null;
+              return (
+                <div className="flex flex-col gap-0.5 mt-0.5">
+                  <span className="text-[10px] text-slate-500">
+                    {strip.voltage} · {strip.colorOrder} · {strip.dataPins === 2 ? 'CLK + DATA' : 'DATA'}
+                  </span>
+                  {strip.ledsPerPixel > 1 && (
+                    <span className="text-[10px] text-orange-400 font-medium">
+                      {strip.ledsPerPixel} physical LEDs per WLED pixel
+                    </span>
+                  )}
+                  {strip.notes && (
+                    <span className="text-[10px] text-slate-600">{strip.notes}</span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Layout mode */}

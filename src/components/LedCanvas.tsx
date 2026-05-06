@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useWledStore } from '../store/wledStore';
 import { runEffect } from '../wled/effects';
+import { getStripType } from '../wled/ledStrips';
 import type { RGBTriple, WLEDState, WLEDConfig } from '../wled/types';
 
 function computeAllColors(state: WLEDState, config: WLEDConfig, time: number): RGBTriple[] {
@@ -38,21 +39,36 @@ function render1D(
   ctx: CanvasRenderingContext2D,
   colors: RGBTriple[],
   w: number,
-  h: number
+  h: number,
+  ledsPerPixel = 1
 ) {
   const n = colors.length;
   const padding = 12;
   const available = w - padding * 2;
-  const ledSize = Math.min(available / n - 2, h * 0.5, 40);
-  const gap = (available - ledSize * n) / (n - 1);
   const cy = h / 2;
 
   ctx.fillStyle = '#0a0c12';
   ctx.fillRect(0, 0, w, h);
 
-  // LED strip housing
+  // When ledsPerPixel > 1, dots within a pixel group have a small gap,
+  // and groups are separated by a slightly larger gap.
+  const dotGap = 1.5;
+  const groupGap = ledsPerPixel > 1 ? 4 : 0;
+  const totalDots = n * ledsPerPixel;
+  const totalIntraGaps = n * (ledsPerPixel - 1) * dotGap;
+  const totalGroupGaps = (n - 1) * groupGap;
+  const totalInterGaps = (n - 1) * dotGap; // gaps between groups (as base dot gaps)
+
+  // Available space for dots = available - all gaps
+  const spaceForDots = available - totalIntraGaps - totalGroupGaps - totalInterGaps;
+  let dotSize = Math.min(spaceForDots / totalDots, h * 0.5, 40);
+  dotSize = Math.max(2, dotSize);
+
+  const groupWidth = ledsPerPixel * dotSize + (ledsPerPixel - 1) * dotGap;
+  const groupStep = groupWidth + dotGap + groupGap;
+
+  const stripH = dotSize + 16;
   ctx.fillStyle = '#1a1d27';
-  const stripH = ledSize + 16;
   ctx.fillRect(padding - 4, cy - stripH / 2, available + 8, stripH);
   ctx.strokeStyle = '#2a2d3a';
   ctx.lineWidth = 1;
@@ -60,42 +76,40 @@ function render1D(
 
   for (let i = 0; i < n; i++) {
     const [r, g, b] = colors[i];
-    const x = padding + i * (ledSize + gap) + ledSize / 2;
     const brightness = (r + g + b) / 765;
+    const groupX = padding + i * groupStep;
 
-    // Glow
-    if (brightness > 0.01) {
-      const glowRadius = ledSize * (1.5 + brightness * 2);
-      const grd = ctx.createRadialGradient(x, cy, 0, x, cy, glowRadius);
-      grd.addColorStop(0, `rgba(${r},${g},${b},${brightness * 0.6})`);
-      grd.addColorStop(0.4, `rgba(${r},${g},${b},${brightness * 0.15})`);
-      grd.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grd;
+    for (let d = 0; d < ledsPerPixel; d++) {
+      const x = groupX + d * (dotSize + dotGap) + dotSize / 2;
+      const radius = dotSize / 2;
+
+      if (brightness > 0.01) {
+        const glowRadius = radius * (1.5 + brightness * 2);
+        const grd = ctx.createRadialGradient(x, cy, 0, x, cy, glowRadius);
+        grd.addColorStop(0, `rgba(${r},${g},${b},${brightness * 0.6})`);
+        grd.addColorStop(0.4, `rgba(${r},${g},${b},${brightness * 0.15})`);
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(x, cy, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       ctx.beginPath();
-      ctx.arc(x, cy, glowRadius, 0, Math.PI * 2);
+      ctx.arc(x, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = brightness > 0.01 ? `rgb(${r},${g},${b})` : '#111318';
       ctx.fill();
-    }
 
-    // LED body
-    const radius = ledSize / 2;
-    ctx.beginPath();
-    ctx.arc(x, cy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = brightness > 0.01
-      ? `rgb(${r},${g},${b})`
-      : '#111318';
-    ctx.fill();
+      ctx.strokeStyle = brightness > 0.1 ? `rgba(${r},${g},${b},0.3)` : '#2a2d3a';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
 
-    // LED border
-    ctx.strokeStyle = brightness > 0.1 ? `rgba(${r},${g},${b},0.3)` : '#2a2d3a';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-
-    // Specular highlight
-    if (brightness > 0.05) {
-      ctx.beginPath();
-      ctx.arc(x - radius * 0.25, cy - radius * 0.25, radius * 0.2, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${brightness * 0.4})`;
-      ctx.fill();
+      if (brightness > 0.05) {
+        ctx.beginPath();
+        ctx.arc(x - radius * 0.25, cy - radius * 0.25, radius * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${brightness * 0.4})`;
+        ctx.fill();
+      }
     }
   }
 }
@@ -169,11 +183,12 @@ export function LedCanvas() {
     const h = canvas.height;
 
     const colors = computeAllColors(state, config, performance.now());
+    const ledsPerPixel = getStripType(config.stripType)?.ledsPerPixel ?? 1;
 
     if (config.is2D) {
       render2D(ctx, colors, w, h, config.matrixWidth, config.matrixHeight);
     } else {
-      render1D(ctx, colors, w, h);
+      render1D(ctx, colors, w, h, ledsPerPixel);
     }
 
     animRef.current = requestAnimationFrame(draw);
